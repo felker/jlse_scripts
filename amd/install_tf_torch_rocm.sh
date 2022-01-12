@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# TODO: consider skipping building the AMD libraries from source
+# and reuse installs from /soft/compilers/rocm/rocm-4.5.2/*
+
 # https://www.videogames.ai/Install-ROCM-Machine-Learning-AMD-GPU
 
 # SUSE RPMs for zypper (2021-10-19)
@@ -18,6 +21,7 @@ mkdir hipfft-install
 mkdir miopen-deps
 mkdir rccl-install
 
+# TODO: put these in a $DOWNLOADS directory and rm it at end?
 git clone https://github.com/ROCmSoftwarePlatform/MIOpen.git
 git clone https://github.com/ROCmSoftwarePlatform/hipFFT.git
 git clone https://github.com/ROCmSoftwarePlatform/rccl.git
@@ -57,8 +61,109 @@ export LD_LIBRARY_PATH=${INSTALL_DIR}/miopen-install/lib:$LD_LIBRARY_PATH
 cd ${INSTALL_DIR}
 export MYPATH=${INSTALL_DIR}/mconda3
 conda create -y -p $MYPATH python=3.8 pip
-# KGF: check that the above line pulls python 3.8.12 or so, not 3.8.0
-conda activate $MYPATH
+# KGF: check that the above line pulls python 3.8.12 or so, not 3.8.0--- CONFIRMED
+
+
+# create a setup file
+cat > setup.sh << EOF
+preferred_shell=\$(basename \$SHELL)
+
+if [ -n "\$ZSH_EVAL_CONTEXT" ]; then
+    DIR=\$( cd "\$( dirname "\$0" )" && pwd )
+else  # bash, sh, etc.
+    DIR=\$( cd "\$( dirname "\${BASH_SOURCE[0]}" )" && pwd )
+fi
+
+eval "\$(\$DIR/bin/conda shell.\${preferred_shell} hook)"
+EOF
+
+# KGF: should I skip this part? etc/ dir does not exist in this installation, unlike
+# on ThetaKNL and ThetaGPU (which has fish/, jupyter/, ...) might just be because I install
+# more packages on those platforms
+# -------------------------------------------------------------------
+# create custom pythonstart in local area to deal with python readlines error
+# cat > etc/pythonstart << EOF
+# # startup script for python to enable saving of interpreter history and
+# # enabling name completion
+
+# # import needed modules
+# import atexit
+# import os
+# #import readline
+# import rlcompleter
+
+# # where is history saved
+# historyPath = os.path.expanduser("~/.pyhistory")
+
+# # handler for saving history
+# def save_history(historyPath=historyPath):
+#     #import readline
+#     #try:
+#     #    readline.write_history_file(historyPath)
+#     #except:
+#     pass
+
+# # read history, if it exists
+# #if os.path.exists(historyPath):
+# #    readline.set_history_length(10000)
+# #    readline.read_history_file(historyPath)
+
+# # register saving handler
+# atexit.register(save_history)
+
+# # enable completion
+# #readline.parse_and_bind('tab: complete')
+
+# # cleanup
+# del os, atexit, rlcompleter, save_history, historyPath
+# EOF
+# -------------------------------------------------------------------
+
+cat > .condarc << EOF
+env_prompt: "(\$ENV_NAME/\$CONDA_DEFAULT_ENV) "
+pkgs_dirs:
+   - \$HOME/.conda/pkgs
+EOF
+
+# move to base install directory
+cd $INSTALL_DIR
+source ${MYPATH}/setup.sh
+# KGF: alternatively,
+#conda activate $MYPATH
+
+echo CONDA BINARY: $(which conda)
+echo CONDA VERSION: $(conda --version)
+echo PYTHON VERSION: $(python --version)
+
+cat > modulefile << EOF
+#%Module2.0
+## miniconda modulefile
+##
+proc ModulesHelp { } {
+   puts stderr "This module will add Miniconda to your environment"
+}
+
+set _module_name  [module-info name]
+set is_module_rm  [module-info mode remove]
+set sys           [uname sysname]
+set os            [uname release]
+set HOME          $::env(HOME)
+
+set CONDA_PREFIX                 $CONDA_PREFIX_PATH
+
+setenv CONDA_PREFIX              \$CONDA_PREFIX
+setenv PYTHONUSERBASE            \$HOME/.local/\${_module_name}
+setenv ENV_NAME                  \$_module_name
+setenv PYTHONSTARTUP             \$CONDA_PREFIX/etc/pythonstart
+
+puts stdout "source \$CONDA_PREFIX/setup.sh"
+module-whatis  "miniconda installation"
+EOF
+
+set -e
+
+echo "Installing tensorflow-rocm and PyTorch ROCm"
+
 pip install tensorflow-rocm
 
 # https://pytorch.org/get-started/locally/
