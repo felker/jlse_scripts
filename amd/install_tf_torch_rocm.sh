@@ -59,8 +59,25 @@ make install
 export LD_LIBRARY_PATH=${INSTALL_DIR}/miopen-install/lib:$LD_LIBRARY_PATH
 
 cd ${INSTALL_DIR}
-export MYPATH=${INSTALL_DIR}/mconda3
-conda create -y -p $MYPATH python=3.8 pip
+
+export CONDA_PREFIX_PATH=${INSTALL_DIR}/mconda3
+
+# Download and install conda for a base python installation
+CONDAVER='py38_4.10.3'
+# "latest" switched from Python 3.8.5 to 3.9.5 on 2021-07-21
+# CONDAVER=latest
+CONDA_DOWNLOAD_URL=https://repo.continuum.io/miniconda
+CONDA_INSTALL_SH=Miniconda3-$CONDAVER-Linux-x86_64.sh
+echo Downloading miniconda installer
+wget ${CONDA_DOWNLOAD_URL}/${CONDA_INSTALL_SH} -P ${INSTALL_DIR}
+chmod +x ${INSTALL_DIR}/${CONDA_INSTALL_SH}
+
+echo Installing Miniconda
+${INSTALL_DIR}/${CONDA_INSTALL_SH} -b -p $CONDA_PREFIX_PATH -u
+
+cd $CONDA_PREFIX_PATH
+
+# conda create -y -p $CONDA_PREFIX_PATH python=3.8 pip
 # KGF: check that the above line pulls python 3.8.12 or so, not 3.8.0--- CONFIRMED
 
 
@@ -75,6 +92,9 @@ else  # bash, sh, etc.
 fi
 
 eval "\$(\$DIR/bin/conda shell.\${preferred_shell} hook)"
+
+export LD_LIBRARY_PATH=${INSTALL_DIR}/rccl-install/lib:${INSTALL_DIR}/hipfft-install/lib:${INSTALL_DIR}/miopen-deps:${INSTALL_DIR}/miopen-install/lib:$LD_LIBRARY_PATH
+
 EOF
 
 # KGF: should I skip this part? etc/ dir does not exist in this installation, unlike
@@ -119,21 +139,22 @@ EOF
 # EOF
 # -------------------------------------------------------------------
 
-cat > .condarc << EOF
-env_prompt: "(\$ENV_NAME/\$CONDA_DEFAULT_ENV) "
-pkgs_dirs:
-   - \$HOME/.conda/pkgs
-EOF
-
 # move to base install directory
 cd $INSTALL_DIR
-source ${MYPATH}/setup.sh
+source ${CONDA_PREFIX_PATH}/setup.sh
 # KGF: alternatively,
-#conda activate $MYPATH
+#conda activate $CONDA_PREFIX_PATH
 
 echo CONDA BINARY: $(which conda)
 echo CONDA VERSION: $(conda --version)
 echo PYTHON VERSION: $(python --version)
+
+# https://github.com/ContinuumIO/anaconda-issues/issues/10156
+cat > ${CONDA_PREFIX_PATH}/.condarc << EOF
+env_prompt: "(\$ENV_NAME/\$CONDA_DEFAULT_ENV) "
+pkgs_dirs:
+   - \$HOME/.conda/pkgs
+EOF
 
 cat > modulefile << EOF
 #%Module2.0
@@ -160,7 +181,8 @@ puts stdout "source \$CONDA_PREFIX/setup.sh"
 module-whatis  "miniconda installation"
 EOF
 
-set -e
+echo "Conda install pip and some deps"
+conda install -y pip cmake pyyaml zip graphviz numba
 
 echo "Installing tensorflow-rocm and PyTorch ROCm"
 
